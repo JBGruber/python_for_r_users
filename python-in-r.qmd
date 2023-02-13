@@ -1,0 +1,585 @@
+---
+title: "UA Workshop: Python for R users"
+author: "Johannes B. Gruber"
+format: html
+---
+
+# Outline {#outline}
+
+1. [Why combine Python with R?](#why-combine-python-with-r)
+2. [Getting started](#getting-started)
+3. [Workflow](#workflow)
+4. [Example 1: `spaCy`](#example-1-spacy)
+5. [Example 2: NMF Topic Models from `scikit-learn`](#example-2-nmf-topic-models-from-scikit-learn)
+6. [Example 3: `BERTopic`](#example-3-bertopic)
+7. [Example 4: Supervised Learning with RoBERTa](#example-4-supervised-learning-with-roberta)
+8. [Example 5: Zero-Shot Classification](#example-5-zero-shot-classification)
+
+# Why combine Python with R? {#why-combine-python-with-r}
+
+![](media/reticulate.jpg){fig-align="center"}
+
+Why not just switch to Python?
+
+1.  If you're here, you probably already know R so why re-learn things from scratch?
+2.  R is a programming language specifically for statistics with some great built-in functionality that you would miss in Python.
+3.  R has absolutely outstanding packages for data science with no drop-in replacement in Python (e.g., ggplot2, dplyr, tidytext).
+
+Why not just stick with R then?
+
+1.  Newer models and methods in machine learning are often Python only (as advancements are made by big companies who rely on Python)
+2.  You might want to collaborate with someone who uses Python and need to run their code
+3.  Learning a new (programming) language is always good to extend your skills (also in your the language(s) you already know)
+
+# Getting started {#getting-started}
+
+We start by installing the necessary Python packages, for which you should use a virtual environment (so we set that one up first).
+
+## Create a Virtual Environment {#virtual-environment}
+
+**Before** you load `reticulate` for the first time, we need to create a virtual environment. This is a folder in your project directory with a link to Python and you the packages you want to use in this project. Why?
+
+-   Packages (or their dependencies) on the [Python Package Index](https://pypi.org/) can be incompatible with each other -- meaning you can break things by updating.
+
+-   Your operating system might keep older versions of some packages around, which you means you could break your OS by and accidental update!
+
+-   This also adds to projects being reproducible on other systems, as you keep track of the specific version of each package used in your project (you could do this in R with the `renv` package).
+
+To grab the correct version of Python to link to in virtual environment:
+
+```{r}
+if (R.Version()$os == "mingw32") {
+  system("where python")
+} else {
+  system("whereis python")
+}
+```
+
+I choose the main Python installation in "/usr/bin/python" and use it as the base for a virtual environment. If you don't have any Python version on your system, you can install one with `reticulate::install_miniconda()`.
+
+```{r}
+# I build in this if condition to not accidentally overwirte the environment when rerunnig the notebook
+if (!reticulate::virtualenv_exists(envname = "./python-env/")) {
+  reticulate::virtualenv_create("./python-env/", python = "/usr/bin/python")
+}
+reticulate::virtualenv_exists(envname = "./python-env/")
+```
+
+`reticulate` is supposed to automatically pick this up when started, but to make sure, I set the environment variable `RETICULATE_PYTHON` to the binary of Python in the new environment:
+
+```{r}
+if (R.Version()$os == "mingw32") {
+  python_path <- file.path(getwd(), "/python-env/Scripts/python.exe")
+} else {
+  python_path <- file.path(getwd(), "/python-env/bin/python")
+}
+file.exists(python_path)
+Sys.setenv(RETICULATE_PYTHON = python_path)
+```
+
+Optional: make this persist restarts of RStudio by saving the environment variable into an `.Renviron` file (otherwise the `Sys.setenv()` line above needs to be in every script):
+
+```{r eval=FALSE}
+# open the .Renviron file
+usethis::edit_r_environ(scope = "project")
+# or directly append it with the neccesary line
+readr::write_lines(
+  x = paste0("RETICULATE_PYTHON=", python_path),
+  file = ".Renviron",
+  append = TRUE
+)
+```
+
+Now reticulate should now pick up the correct binary in the project folder:
+
+```{r}
+library(reticulate)
+py_config()
+```
+
+## Installing Packages {#packages}
+
+`reticulate::py_install()` installs package similar to `install.packages()`. Let's install the packages we need:
+
+```{r}
+#| eval: false
+reticulate::py_install(c("spacy", 
+                         "scikit-learn", 
+                         "pandas", 
+                         "bertopic", 
+                         "sentence_transformers", 
+                         "simpletransformers"))
+```
+
+But there are some caveats:
+
+-   not all packages can be installed with the name you see in scripts (e.g.,to install the package, call "scikit-learn", to load it you need `sklearn`)
+-   you might need a specific version of a package to follow a specific tutorial
+-   there can be different flavours of the same package (e.g., `bertopic`, `bertopic[gensim]`, `bertopic[spacy]`)
+-   you will get a cryptic warning if you attempt to install base Python packages
+
+```{r}
+#| error: true
+reticulate::py_install("os")
+```
+
+General tip: see if the software distributor has instructions, like the excellent ones from [`spacy`](https://spacy.io/usage):
+
+![](media/spacy-install.png){fig-align="center"}
+
+If you see the `$` in the beginning, these are command line/bash commands. Use the ```` ```{bash} ```` chunk option to run these commands and use the pip and python versions in your virtual environment (you could also [activate the environment](https://docs.python.org/3/tutorial/venv.html) instead).
+
+```{bash}
+#| eval: false
+./python-env/bin/pip install -U pip setuptools wheel scikit-learn pandas bertopic sentence_transformers
+./python-env/bin/pip install -U 'spacy[cuda-autodetect]'
+./python-env/bin/python -m spacy download en_core_web_sm
+./python-env/bin/python -m spacy download de_core_news_sm
+```
+
+On Windows, the binary files are in a different location:
+
+```{bash}
+#| eval: false
+./python-env/bin/pip install -U pip setuptools wheel scikit-learn pandas bertopic sentence_transformers
+./python-env/bin/pip install -U 'spacy[cuda-autodetect]'
+./python-env/bin/python -m spacy download en_core_web_sm
+./python-env/bin/python -m spacy download de_core_news_sm
+```
+
+# Workflow {#workflow}
+
+In my opinion, a nice workflow is to use R and Python together in a Quarto Document. All you need to do to tell Quarto to run a Python, instead of an R chunk is to replace ```` ```{r} ```` with ```` ```{python} ````.
+
+```{r}
+text <- "Hello World! From R"
+print(text)
+```
+
+```{python}
+text = "Hello World! From Python"
+print(text)
+```
+
+You can even set up a shortcut to make these chunks (I like `Ctrl+Alt+P`):
+
+![](media/RStudio-Shortcut-1.png){fig-align="center"}
+
+![](media/RStudio-Shortcut-2.png){fig-align="center"}
+
+To get an interactive Python session in your Console, you can use `reticulate::repl_python()`.
+
+As you've seen above, the code is pretty similar, with a few key differences:
+
+-   `=` instead of `<-`
+-   code formatting is part of the syntax!
+-   base Python does not have `data.frame` class, instead you have dictionaries or the DataFrame from the Pandas package
+-   Python lists are the equivalent of R vectors
+-   the `*apply` family of functions and vectorised code does not exist as such -- everything is a for loop! <!-- - the equivalent of `$`, `|>` and `::` in R is `.` in Python (but not always) -->
+-   a lot of packages are writing object oriented instead of functional code
+-   many more!
+
+```{python}
+#| error: true
+my_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+my_list + 2 # does not work in Python
+for i in my_list:
+    print(i + 2)
+```
+
+```{python}
+my_dict = {'name': ['John', 'Jane', 'Jim', 'Joan'],
+          'age': [32, 28, 40, 35],
+          'city': ['New York', 'London', 'Paris', 'Berlin']}
+my_dict
+```
+
+The truly magical thing about `reticulate` is how seamless it hands objects back and forth between Python and R:
+
+```{r}
+py$text
+py$my_list
+py$my_dict
+```
+
+```{r}
+my_df <- data.frame(num = 1:10,
+                    let = LETTERS[1:10])
+my_list <- list(df = my_df, 11:20)
+```
+
+```{python}
+r.text
+r.my_df
+r.my_list
+```
+
+What I think is especially cool is that this even works with functions:
+
+```{python}
+def hello(x=None):
+  """
+  :param x: name of the person to say hello to.
+  """
+  if not x:
+    print("Hello World!")
+  else:
+    print("Hello " + x + "!")
+```
+
+```{r}
+py$hello()
+py$hello("Class")
+reticulate::py_help(py$hello)
+```
+
+# Example 1: `spaCy` {#example-1-spacy}
+
+The `spacyr` package is a good example for an R wrapper for a popular Python package. So comparing the functionality is a good venture point to understand what is happening. We can replicate the [`spacyr` tutorial](https://spacyr.quanteda.io/articles/using_spacyr.html) directly with reticulate to get going.
+
+```{r}
+txt <- c(d1 = "spaCy is great at fast natural language processing.",
+         d2 = "Mr. Smith spent two years in North Carolina. One in New York.")
+doc_ids <- names(txt)
+```
+
+```{python}
+import spacy
+nlp = spacy.load("en_core_web_sm")
+doc = nlp(r.txt[1])
+x = doc[1]
+for token in doc:
+  print(token.text, "|", token.lemma_, "|", token.pos_, "|", token.ent_type_)
+```
+
+```{r}
+doc <- py$doc
+doc
+doc[1]
+doc[1]$pos_
+```
+
+```{r}
+tibble(
+  token = sapply(seq_along(doc) - 1, function(i) doc[i]$text),
+  lemma = sapply(seq_along(doc) - 1, function(i) doc[i]$lemma_),
+  pos = sapply(seq_along(doc) - 1, function(i) doc[i]$pos_),
+  entity = sapply(seq_along(doc) - 1, function(i) doc[i]$ent_type_)
+)
+```
+
+```{python}
+def spacy_parse(doc_id, text):
+  doc = nlp(text)
+  toks = [] # make empty list to fill
+  for sent_id, sent in enumerate(doc.sents): # loop over sentences
+    for token in sent: # loop over tokens
+      toks.append({
+        "doc_id": doc_id,
+        'sentence_id': sent_id + 1, # python numbers start at 0, we want to start at 1
+        'token_id': token.i + 1,
+        'token': token.text,
+        'lemma': token.lemma_,
+        'pos': token.pos_,
+        'entity': token.ent_type_
+        })
+  return toks
+```
+
+```{r}
+py$spacy_parse(1, txt[2])[[1]]
+```
+
+```{r}
+library(tidyverse)
+spacy_parse <- function(text, doc_id = names(text)) {
+  result_list <- map2(doc_id, text, function(x, y) py$spacy_parse(x, y))
+  map_df(unlist(result_list, recursive = FALSE), as_tibble)
+}
+spacy_parse(txt)
+```
+
+# Example 2: NMF Topic Models from `scikit-learn` {#example-2-nmf-topic-models-from-scikit-learn}
+
+Inspired by [Text Mining with R](https://www.tidytextmining.com/topicmodeling.html)
+
+```{r}
+library(janeaustenr)
+books <- austen_books() |>
+  mutate(paragraph = cumsum(text == "" & lag(text) != "")) |>
+  group_by(paragraph) |>
+  summarise(book = head(book, 1),
+            text = trimws(paste(text, collapse = " ")),
+            .groups = "drop")
+
+glimpse(books)
+```
+
+```{r}
+library(tidytext)
+austen_dfm <- books |>
+  unnest_tokens(output = feature, input = text) |>
+  count(book, paragraph, feature) |>
+  mutate(doc_id = paste0(book, "_", paragraph)) |>
+  cast_dfm(document = doc_id, term = feature, value = n)
+```
+
+```{r}
+sklearn <- import("sklearn")
+model <- sklearn$decomposition$NMF(
+  n_components = 6L,  # number of topics
+  random_state  =  5L, # equivalent of seed for reproducibility
+  max_iter = 400L
+)$fit(austen_dfm)
+
+beta <- model$components_
+colnames(beta) <- colnames(austen_dfm)
+rownames(beta) <- paste0("topic_", seq_len(nrow(beta)))
+glimpse(beta)
+
+gamma <- model$transform(austen_dfm)
+colnames(gamma) <- paste0("topic_", seq_len(ncol(gamma)))
+rownames(gamma) <- paste0("text_", seq_len(nrow(gamma)))
+glimpse(gamma)
+```
+
+```{r}
+beta |>
+  as_tibble(rownames = "topic") |>
+  pivot_longer(cols = -topic, names_to = "feature", values_to = "beta") |>
+  mutate(topic = fct_inorder(topic)) |>
+  group_by(topic) |>
+  slice_max(beta, n = 10) |>
+  arrange(topic, -beta) |>
+  mutate(feature = reorder_within(feature, beta, topic)) |>
+  ggplot(aes(x = beta, y = feature, fill = topic)) +
+  geom_col() +
+  facet_wrap(~topic, ncol = 2, scales = "free") +
+  theme_minimal() +
+  labs(x = NULL, y = NULL, title = "Top-features per topic") +
+  scale_y_reordered()
+```
+
+# Example 3: `BERTopic` {#example-3-bertopic}
+
+https://tutorials.quanteda.io/machine-learning/topicmodel/
+
+```{r}
+library(quanteda.corpora)
+corp_news <- download("data_corpus_guardian")[["documents"]]
+```
+
+```{python}
+from bertopic import BERTopic
+from sentence_transformers import SentenceTransformer
+
+# confusingly, this is the setup part
+topic_model = BERTopic(language="english",
+                       top_n_words=5,
+                       n_gram_range=(1, 2), 
+                       nr_topics="auto", # change if you want a specific nr of topics
+                       calculate_probabilities=True)
+
+# and only here we actually run something                       
+topics, doc_topic = topic_model.fit_transform(r.corp_news.texts)
+```
+
+Unlike traditional topic models, BERTopic uses an algorithm that automatically determines a sensible number of topics and also automatically labels topics:
+
+```{r}
+topic_model <- py$topic_model
+topic_labels <- tibble(topic = as.integer(names(topic_model$topic_labels_)),
+                       label = unlist(topic_model$topic_labels_ )) |>
+  mutate(label = fct_reorder(label, topic))
+topic_labels
+```
+
+Note that -1 describes a trash topic with words and documents that do not really belong anywhere. BERTopic also supplies the top words, i.e., the ones that most likely belong to each topic. In the code above I requested 5 words for each topic:
+
+```{r}
+top_words <- map_df(names(topic_model$topic_representations_), function(t) {
+  map_df(topic_model$topic_representations_[[t]], function(y) 
+    tibble(feature = y[[1]], prob = y[[2]])) |>
+    mutate(topic = as.integer(t), .before = 1L)
+})
+```
+
+We can plot them in the same way as above:
+
+```{r}
+#| fig.height: 10
+#| fig.width: 6
+top_words |>
+  left_join(topic_labels, by = "topic") |>
+  mutate(feature = reorder_within(feature, prob, topic)) |>
+  ggplot(aes(x = prob, y = feature, fill = topic, label = label)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(label), ncol = 2, scales = "free_y") +
+  scale_y_reordered() +
+  labs(x = NULL, y = NULL)
+```
+
+We can use a nice little visualization built into BERTopic to show how topics are linked to one another:
+
+```{python}
+# map intertopic distance
+intertopic_distance = topic_model.visualize_topics(width=700, height=700)
+# save fig
+intertopic_distance.write_html("bert_corp_news_intertopic.html")
+```
+
+```{r}
+htmltools::includeHTML("bert_corp_news_intertopic.html")
+```
+
+BERTopic also classifies documents into the topic categories (again not really how you should use LDA topicmodels). And provides a nice visualisation for trends over time. Unfortunately, the date format in R does not translate automagically to Python, hence we need to convert the dates to strings:
+
+```{r}
+corp_news_t <- corp_news |> 
+  mutate(date_chr = as.character(date))
+```
+
+```{python}
+topics_over_time = topic_model.topics_over_time(docs=r.corp_news_t.texts,
+                                                timestamps=r.corp_news_t.date_chr,
+                                                global_tuning=True,
+                                                evolution_tuning=True,
+                                                nr_bins=20)
+#plot figure
+fig_overtime = topic_model.visualize_topics_over_time(topics_over_time, 
+                                                      topics=[5, 6, 30, 37])
+#save figure
+fig_overtime.write_html("fig_overtime.html")
+```
+
+```{r}
+htmltools::includeHTML("fig_overtime.html")
+```
+
+# Example 4: Supervised Learning with RoBERTa {#example-4-supervised-learning-with-roberta}
+
+https://tutorials.quanteda.io/machine-learning/nb/
+
+```{python}
+#| message: false
+import pandas as pd
+import os
+import torch
+from simpletransformers.classification import ClassificationModel
+
+# args copied from grafzahl
+model_args = {
+  "num_train_epochs": 1, # increase for multiple runs, which can yield better performance
+  "use_multiprocessing": False,
+  "use_multiprocessing_for_evaluation": False,
+  "overwrite_output_dir": True,
+  "reprocess_input_data":  True, 
+  "overwrite_output_dir":  True,
+  "fp16":  True,
+  "save_steps":  -1,
+  "save_eval_checkpoints":  False,
+  "save_model_every_epoch":  False,
+  "silent":  True,
+}
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+roberta_model = ClassificationModel(model_type="roberta", 
+                                    model_name="roberta-base", 
+                                    # Use GPU if available
+                                    use_cuda=torch.cuda.is_available(),
+                                    args=model_args)
+```
+
+```{r}
+corp_movies <- quanteda.textmodels::data_corpus_moviereviews %>% 
+  tibble(quanteda::docvars(x = .), text = .)
+
+corp_movies |> 
+  count(sentiment)
+
+set.seed(1)
+corp_movies_train <- corp_movies |> 
+  slice_sample(prop = 0.9)
+
+corp_movies_test <- corp_movies |> 
+  filter(!id2 %in% corp_movies_train$id2)
+```
+
+```{python}
+# process data to the form simpletransformers needs
+train_df = r.corp_movies_train
+train_df['labels'] = train_df['sentiment'].astype('category').cat.codes
+train_df = train_df[['text', 'labels']]
+
+roberta_model.train_model(train_df)
+
+# test data needs to be a list
+test_l = r.corp_movies_test["text"].tolist()
+predictions, raw_outputs = roberta_model.predict(test_l)
+```
+
+```{r}
+results <- tibble(
+  truth = corp_movies_test$sentiment,
+  estimate = factor(c("neg", "pos")[py$predictions + 1])
+)
+conf_mat <- yardstick::conf_mat(results, truth, estimate)
+summary(conf_mat)
+```
+
+# Example 5: Zero-Shot Classification {#example-5-zero-shot-classification}
+
+```{python}
+from transformers import pipeline
+classifier = pipeline("zero-shot-classification",
+                      model="MoritzLaurer/xlm-v-base-mnli-xnli")
+
+sequence_to_classify = "Angela Merkel ist eine Politikerin in Deutschland und Vorsitzende der CDU"
+candidate_labels = ["politics", "economy", "entertainment", "environment"]
+output = classifier(sequence_to_classify, candidate_labels, multi_label=False)
+print(output)
+```
+
+```{r}
+#| cache: true
+zero_shot_classification <- function(text, labels) {
+  res <- py$classifier(text, labels, multi_label=FALSE)
+  map_df(seq_along(res), function(i) {
+    as_tibble(res[[i]]) |> 
+      mutate(id = i)
+  }) |> 
+    group_by(id) |> 
+    slice_max(scores, n = 1)
+}
+
+set.seed(1)
+test <- corp_movies_test |> 
+  sample_n(10)
+
+pred <- zero_shot_classification(
+  as.character(test$text),
+  c("negative sentiment", "positive sentiment")
+)
+
+results <- pred |> 
+  ungroup() |> 
+  mutate(estimate = factor(labels),
+         estimate = fct_recode(estimate,
+                               neg = "negative sentiment",
+                               pos = "positive sentiment")) |> 
+  mutate(truth = corp_movies_test$sentiment[1:10])
+
+conf_mat <- yardstick::conf_mat(results, truth, estimate)
+summary(conf_mat)
+```
+
+# wrap up {#wrap-up}
+
+Some information about the session.
+
+```{r}
+Sys.time()
+sessionInfo()
+py_list_packages()
+```
