@@ -26,3 +26,20 @@ the URL field and select where to download the project to.
 
 After clicking “Create Project”, a new session should open. Navigate to
 the file “python-in-r.qmd” and open it. That’s it!
+
+# Install dependencies
+
+The short code below will check the main python-in-r.qmd file for
+mentioned R packages and install the missing ones on your computer:
+
+``` r
+if (!requireNamespace("rlang", quietly = TRUE)) install.packages("rlang", dependencies = TRUE)
+rlang::check_installed("attachment")
+rlang::check_installed(attachment::att_from_rmds("python-in-r.qmd"))
+```
+
+If there is no output, you are good to go.
+
+We will install the Python packages during the workshop, but if you want
+to get a head start, you can follow the “Getting started” section in the
+“python-in-r.qmd” file.

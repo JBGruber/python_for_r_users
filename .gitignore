@@ -3,3 +3,9 @@
 .RData
 .Ruserdata
 flyer
+.Renviron
+cache_dir
+outputs
+python-env
+python-in-r_cache
+python-in-r_files

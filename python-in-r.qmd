@@ -103,11 +103,11 @@ py_config()
 
 ```{r}
 #| eval: false
-reticulate::py_install(c("spacy", 
-                         "scikit-learn", 
-                         "pandas", 
-                         "bertopic", 
-                         "sentence_transformers", 
+reticulate::py_install(c("spacy",
+                         "scikit-learn",
+                         "pandas",
+                         "bertopic",
+                         "sentence_transformers",
                          "simpletransformers"))
 ```
 
@@ -175,7 +175,7 @@ As you've seen above, the code is pretty similar, with a few key differences:
 -   code formatting is part of the syntax!
 -   base Python does not have `data.frame` class, instead you have dictionaries or the DataFrame from the Pandas package
 -   Python lists are the equivalent of R vectors
--   the `*apply` family of functions and vectorised code does not exist as such -- everything is a for loop! <!-- - the equivalent of `$`, `|>` and `::` in R is `.` in Python (but not always) -->
+-   the `*apply` family of functions and vectorised code does not exist as such -- everything is a for loop! <!-- - the equivalent of `$`, `%>% ` and `::` in R is `.` in Python (but not always) -->
 -   a lot of packages are writing object oriented instead of functional code
 -   many more!
 
@@ -260,7 +260,7 @@ doc[1]$pos_
 ```
 
 ```{r}
-tibble(
+tibble::tibble(
   token = sapply(seq_along(doc) - 1, function(i) doc[i]$text),
   lemma = sapply(seq_along(doc) - 1, function(i) doc[i]$lemma_),
   pos = sapply(seq_along(doc) - 1, function(i) doc[i]$pos_),
@@ -291,6 +291,7 @@ py$spacy_parse(1, txt[2])[[1]]
 ```
 
 ```{r}
+#| message: false
 library(tidyverse)
 spacy_parse <- function(text, doc_id = names(text)) {
   result_list <- map2(doc_id, text, function(x, y) py$spacy_parse(x, y))
@@ -305,9 +306,9 @@ Inspired by [Text Mining with R](https://www.tidytextmining.com/topicmodeling.ht
 
 ```{r}
 library(janeaustenr)
-books <- austen_books() |>
-  mutate(paragraph = cumsum(text == "" & lag(text) != "")) |>
-  group_by(paragraph) |>
+books <- austen_books() %>%
+  mutate(paragraph = cumsum(text == "" & lag(text) != "")) %>%
+  group_by(paragraph) %>%
   summarise(book = head(book, 1),
             text = trimws(paste(text, collapse = " ")),
             .groups = "drop")
@@ -317,10 +318,10 @@ glimpse(books)
 
 ```{r}
 library(tidytext)
-austen_dfm <- books |>
-  unnest_tokens(output = feature, input = text) |>
-  count(book, paragraph, feature) |>
-  mutate(doc_id = paste0(book, "_", paragraph)) |>
+austen_dfm <- books %>%
+  unnest_tokens(output = feature, input = text) %>%
+  count(book, paragraph, feature) %>%
+  mutate(doc_id = paste0(book, "_", paragraph)) %>%
   cast_dfm(document = doc_id, term = feature, value = n)
 ```
 
@@ -344,14 +345,14 @@ glimpse(gamma)
 ```
 
 ```{r}
-beta |>
-  as_tibble(rownames = "topic") |>
-  pivot_longer(cols = -topic, names_to = "feature", values_to = "beta") |>
-  mutate(topic = fct_inorder(topic)) |>
-  group_by(topic) |>
-  slice_max(beta, n = 10) |>
-  arrange(topic, -beta) |>
-  mutate(feature = reorder_within(feature, beta, topic)) |>
+beta %>%
+  as_tibble(rownames = "topic") %>%
+  pivot_longer(cols = -topic, names_to = "feature", values_to = "beta") %>%
+  mutate(topic = fct_inorder(topic)) %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>%
+  arrange(topic, -beta) %>%
+  mutate(feature = reorder_within(feature, beta, topic)) %>%
   ggplot(aes(x = beta, y = feature, fill = topic)) +
   geom_col() +
   facet_wrap(~topic, ncol = 2, scales = "free") +
@@ -362,7 +363,7 @@ beta |>
 
 # Example 3: `BERTopic` {#example-3-bertopic}
 
-https://tutorials.quanteda.io/machine-learning/topicmodel/
+I use the quanteda tutorial about [topicmodels](https://tutorials.quanteda.io/machine-learning/topicmodel/) to show an example workflow for `BERTopic`. 
 
 ```{r}
 library(quanteda.corpora)
@@ -372,15 +373,17 @@ corp_news <- download("data_corpus_guardian")[["documents"]]
 ```{python}
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
+from umap import UMAP
 
 # confusingly, this is the setup part
 topic_model = BERTopic(language="english",
                        top_n_words=5,
-                       n_gram_range=(1, 2), 
+                       n_gram_range=(1, 2),
                        nr_topics="auto", # change if you want a specific nr of topics
-                       calculate_probabilities=True)
+                       calculate_probabilities=True,
+                       umap_model=UMAP(random_state=42)) # make reproducible
 
-# and only here we actually run something                       
+# and only here we actually run something
 topics, doc_topic = topic_model.fit_transform(r.corp_news.texts)
 ```
 
@@ -389,7 +392,7 @@ Unlike traditional topic models, BERTopic uses an algorithm that automatically d
 ```{r}
 topic_model <- py$topic_model
 topic_labels <- tibble(topic = as.integer(names(topic_model$topic_labels_)),
-                       label = unlist(topic_model$topic_labels_ )) |>
+                       label = unlist(topic_model$topic_labels_ )) %>%
   mutate(label = fct_reorder(label, topic))
 topic_labels
 ```
@@ -398,8 +401,8 @@ Note that -1 describes a trash topic with words and documents that do not really
 
 ```{r}
 top_words <- map_df(names(topic_model$topic_representations_), function(t) {
-  map_df(topic_model$topic_representations_[[t]], function(y) 
-    tibble(feature = y[[1]], prob = y[[2]])) |>
+  map_df(topic_model$topic_representations_[[t]], function(y)
+    tibble(feature = y[[1]], prob = y[[2]])) %>%
     mutate(topic = as.integer(t), .before = 1L)
 })
 ```
@@ -407,11 +410,10 @@ top_words <- map_df(names(topic_model$topic_representations_), function(t) {
 We can plot them in the same way as above:
 
 ```{r}
-#| fig.height: 10
-#| fig.width: 6
-top_words |>
-  left_join(topic_labels, by = "topic") |>
-  mutate(feature = reorder_within(feature, prob, topic)) |>
+top_words %>%
+  filter(topic %in% c(1, 7, 44, 53, 65, 66)) %>% # select a couple of topics
+  left_join(topic_labels, by = "topic") %>%
+  mutate(feature = reorder_within(feature, prob, topic)) %>%
   ggplot(aes(x = prob, y = feature, fill = topic, label = label)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(vars(label), ncol = 2, scales = "free_y") +
@@ -425,17 +427,17 @@ We can use a nice little visualization built into BERTopic to show how topics ar
 # map intertopic distance
 intertopic_distance = topic_model.visualize_topics(width=700, height=700)
 # save fig
-intertopic_distance.write_html("bert_corp_news_intertopic.html")
+intertopic_distance.write_html("python-in-r_files/figure-html/bert_corp_news_intertopic.html")
 ```
 
 ```{r}
-htmltools::includeHTML("bert_corp_news_intertopic.html")
+htmltools::includeHTML("python-in-r_files/figure-html/bert_corp_news_intertopic.html")
 ```
 
 BERTopic also classifies documents into the topic categories (again not really how you should use LDA topicmodels). And provides a nice visualisation for trends over time. Unfortunately, the date format in R does not translate automagically to Python, hence we need to convert the dates to strings:
 
 ```{r}
-corp_news_t <- corp_news |> 
+corp_news_t <- corp_news %>%
   mutate(date_chr = as.character(date))
 ```
 
@@ -446,22 +448,24 @@ topics_over_time = topic_model.topics_over_time(docs=r.corp_news_t.texts,
                                                 evolution_tuning=True,
                                                 nr_bins=20)
 #plot figure
-fig_overtime = topic_model.visualize_topics_over_time(topics_over_time, 
-                                                      topics=[5, 6, 30, 37])
+fig_overtime = topic_model.visualize_topics_over_time(topics_over_time,
+                                                      topics=[1, 7, 44, 53, 65, 66])
 #save figure
-fig_overtime.write_html("fig_overtime.html")
+fig_overtime.write_html("python-in-r_files/figure-html/fig_overtime.html")
 ```
 
 ```{r}
-htmltools::includeHTML("fig_overtime.html")
+htmltools::includeHTML("python-in-r_files/figure-html/fig_overtime.html")
 ```
 
 # Example 4: Supervised Learning with RoBERTa {#example-4-supervised-learning-with-roberta}
 
-https://tutorials.quanteda.io/machine-learning/nb/
+To demonstrate the workflow of supvervised learning, I'm replicating the example from [the naive bayes quanteda tutorial](https://tutorials.quanteda.io/machine-learning/nb/).
 
 ```{python}
 #| message: false
+#| warning: false
+#| output: false
 import pandas as pd
 import os
 import torch
@@ -473,7 +477,7 @@ model_args = {
   "use_multiprocessing": False,
   "use_multiprocessing_for_evaluation": False,
   "overwrite_output_dir": True,
-  "reprocess_input_data":  True, 
+  "reprocess_input_data":  True,
   "overwrite_output_dir":  True,
   "fp16":  True,
   "save_steps":  -1,
@@ -484,29 +488,30 @@ model_args = {
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-roberta_model = ClassificationModel(model_type="roberta", 
-                                    model_name="roberta-base", 
+roberta_model = ClassificationModel(model_type="roberta",
+                                    model_name="roberta-base",
                                     # Use GPU if available
                                     use_cuda=torch.cuda.is_available(),
                                     args=model_args)
 ```
 
 ```{r}
-corp_movies <- quanteda.textmodels::data_corpus_moviereviews %>% 
+corp_movies <- quanteda.textmodels::data_corpus_moviereviews %>%
   tibble(quanteda::docvars(x = .), text = .)
 
-corp_movies |> 
+corp_movies %>%
   count(sentiment)
 
 set.seed(1)
-corp_movies_train <- corp_movies |> 
+corp_movies_train <- corp_movies %>%
   slice_sample(prop = 0.9)
 
-corp_movies_test <- corp_movies |> 
+corp_movies_test <- corp_movies %>%
   filter(!id2 %in% corp_movies_train$id2)
 ```
 
 ```{python}
+#| output: false
 # process data to the form simpletransformers needs
 train_df = r.corp_movies_train
 train_df['labels'] = train_df['sentiment'].astype('category').cat.codes
@@ -530,6 +535,9 @@ summary(conf_mat)
 
 # Example 5: Zero-Shot Classification {#example-5-zero-shot-classification}
 
+Something I learned about recently are zero-shot classification models, which do not need to be trained on new categories, but can infer category-text relationships from the data they were trained with.
+You can get one such model from https://huggingface.co/MoritzLaurer/xlm-v-base-mnli-xnli.
+
 ```{python}
 from transformers import pipeline
 classifier = pipeline("zero-shot-classification",
@@ -546,33 +554,41 @@ print(output)
 zero_shot_classification <- function(text, labels) {
   res <- py$classifier(text, labels, multi_label=FALSE)
   map_df(seq_along(res), function(i) {
-    as_tibble(res[[i]]) |> 
+    as_tibble(res[[i]]) %>%
       mutate(id = i)
-  }) |> 
-    group_by(id) |> 
+  }) %>%
+    group_by(id) %>%
     slice_max(scores, n = 1)
 }
 
-set.seed(1)
-test <- corp_movies_test |> 
+set.seed(3)
+test <- corp_movies_test %>%
   sample_n(10)
 
 pred <- zero_shot_classification(
   as.character(test$text),
-  c("negative sentiment", "positive sentiment")
+  c("negative", "positive")
 )
 
-results <- pred |> 
-  ungroup() |> 
+results <- pred %>%
+  ungroup() %>%
   mutate(estimate = factor(labels),
          estimate = fct_recode(estimate,
-                               neg = "negative sentiment",
-                               pos = "positive sentiment")) |> 
-  mutate(truth = corp_movies_test$sentiment[1:10])
+                               neg = "negative",
+                               pos = "positive")) %>%
+  mutate(truth = test$sentiment[1:10])
 
 conf_mat <- yardstick::conf_mat(results, truth, estimate)
 summary(conf_mat)
 ```
+
+# Further Learning
+
+- [Computational Analysis of Communication](https://cssbook.net/): a free book on communication science with Python and/or R with side-by-side code examples in both languages
+- [Doing Computational Social Science with Python: An Introduction](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2737682): a free book on social science data wrangling and analyses in Python (you can skip chapters 1-4)
+- [A Whirlwind Tour of Python](https://jakevdp.github.io/WhirlwindTourOfPython/): a free book with 
+- (https://www.youtube.com/watch?v=YmcA4ODpiqA&t=3679s): 4.5h workshop introducing Python (from with some hints for R users sprinkled throughout the examples)
+- [ChatGPT](https://chat.openai.com/chat) is really good at translating/explaining Python code!
 
 # wrap up {#wrap-up}
 
@@ -581,5 +597,8 @@ Some information about the session.
 ```{r}
 Sys.time()
 sessionInfo()
-py_list_packages()
+py_list_packages() %>% 
+  as_tibble() %>% 
+  select(-requirement) %>% 
+  print(n = Inf)
 ```
