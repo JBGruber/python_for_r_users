@@ -34,6 +34,7 @@ mentioned R packages and install the missing ones on your computer:
 
 ``` r
 if (!requireNamespace("rlang", quietly = TRUE)) install.packages("rlang", dependencies = TRUE)
+if (!rlang::is_installed("quanteda.corpora")) remotes::install_github("quanteda/quanteda.corpora")
 rlang::check_installed("attachment")
 rlang::check_installed(attachment::att_from_rmds("python-in-r.qmd"))
 ```

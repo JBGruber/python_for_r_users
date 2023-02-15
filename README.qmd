@@ -33,11 +33,12 @@ The short code below will check the main python-in-r.qmd file for mentioned R pa
 
 ```{r}
 if (!requireNamespace("rlang", quietly = TRUE)) install.packages("rlang", dependencies = TRUE)
+if (!rlang::is_installed("quanteda.corpora")) remotes::install_github("quanteda/quanteda.corpora")
 rlang::check_installed("attachment")
 rlang::check_installed(attachment::att_from_rmds("python-in-r.qmd"))
 ```
 
 If there is no output, you are good to go.
 
-We will install the Python packages during the workshop, but if you want to get a head start, you can follow the "Getting started" section in the "python-in-r.qmd" file.
+We will install the Python packages during the workshop, but if you want to get a head start, you can follow the "Getting started" section in the "python-in-r.qmd" file. 
 

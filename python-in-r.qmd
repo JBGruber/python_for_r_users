@@ -49,7 +49,7 @@ To grab the correct version of Python to link to in virtual environment:
 
 ```{r}
 if (R.Version()$os == "mingw32") {
-  system("where python")
+  system("where python") # for Windows
 } else {
   system("whereis python")
 }
@@ -58,9 +58,10 @@ if (R.Version()$os == "mingw32") {
 I choose the main Python installation in "/usr/bin/python" and use it as the base for a virtual environment. If you don't have any Python version on your system, you can install one with `reticulate::install_miniconda()`.
 
 ```{r}
-# I build in this if condition to not accidentally overwirte the environment when rerunnig the notebook
+# I build in this if condition to not accidentally overwrite the environment when rerunning the notebook
 if (!reticulate::virtualenv_exists(envname = "./python-env/")) {
-  reticulate::virtualenv_create("./python-env/", python = "/usr/bin/python")
+  reticulate::virtualenv_create("./python-env/", python = "C:/Users/johannes/AppData/Local/r-miniconda/python.exe")
+  # for Windows the path is usually "C:/Users/{user}/AppData/Local/r-miniconda/python.exe"
 }
 reticulate::virtualenv_exists(envname = "./python-env/")
 ```
@@ -69,9 +70,9 @@ reticulate::virtualenv_exists(envname = "./python-env/")
 
 ```{r}
 if (R.Version()$os == "mingw32") {
-  python_path <- file.path(getwd(), "/python-env/Scripts/python.exe")
+  python_path <- file.path(getwd(), "python-env/Scripts/python.exe")
 } else {
-  python_path <- file.path(getwd(), "/python-env/bin/python")
+  python_path <- file.path(getwd(), "python-env/bin/python")
 }
 file.exists(python_path)
 Sys.setenv(RETICULATE_PYTHON = python_path)
@@ -82,7 +83,7 @@ Optional: make this persist restarts of RStudio by saving the environment variab
 ```{r eval=FALSE}
 # open the .Renviron file
 usethis::edit_r_environ(scope = "project")
-# or directly append it with the neccesary line
+# or directly append it with the necessary line
 readr::write_lines(
   x = paste0("RETICULATE_PYTHON=", python_path),
   file = ".Renviron",
@@ -106,7 +107,7 @@ py_config()
 reticulate::py_install(c("spacy",
                          "scikit-learn",
                          "pandas",
-                         "bertopic",
+                         "bertopic", # this one requires some build tools not usually available on Windows, comment out to install the rest
                          "sentence_transformers",
                          "simpletransformers"))
 ```
@@ -131,8 +132,8 @@ If you see the `$` in the beginning, these are command line/bash commands. Use t
 
 ```{bash}
 #| eval: false
-./python-env/bin/pip install -U pip setuptools wheel scikit-learn pandas bertopic sentence_transformers
-./python-env/bin/pip install -U 'spacy[cuda-autodetect]'
+./python-env/bin/pip install -U pip setuptools wheel
+./python-env/bin/pip install -U 'spacy'
 ./python-env/bin/python -m spacy download en_core_web_sm
 ./python-env/bin/python -m spacy download de_core_news_sm
 ```
@@ -141,10 +142,10 @@ On Windows, the binary files are in a different location:
 
 ```{bash}
 #| eval: false
-./python-env/bin/pip install -U pip setuptools wheel scikit-learn pandas bertopic sentence_transformers
-./python-env/bin/pip install -U 'spacy[cuda-autodetect]'
-./python-env/bin/python -m spacy download en_core_web_sm
-./python-env/bin/python -m spacy download de_core_news_sm
+./python-env/Scripts/pip.exe install -U pip setuptools wheel
+./python-env/Scripts/pip.exe install -U 'spacy'
+./python-env/Scripts/python.exe -m spacy download en_core_web_sm
+./python-env/Scripts/python.exe -m spacy download de_core_news_sm
 ```
 
 # Workflow {#workflow}
@@ -268,6 +269,8 @@ tibble::tibble(
 )
 ```
 
+Another awesome way to run the Python code from R is to define a Python function that returns R-compatible objects:
+
 ```{python}
 def spacy_parse(doc_id, text):
   doc = nlp(text)
@@ -286,9 +289,13 @@ def spacy_parse(doc_id, text):
   return toks
 ```
 
+Now we can call this function directly from R:
+
 ```{r}
 py$spacy_parse(1, txt[2])[[1]]
 ```
+
+Or even wrap it in an R function to make it run on an entire vector at once:
 
 ```{r}
 #| message: false
@@ -320,18 +327,21 @@ glimpse(books)
 library(tidytext)
 austen_dfm <- books %>%
   unnest_tokens(output = feature, input = text) %>%
+  filter(!feature %in% stop_words$word) %>% 
   count(book, paragraph, feature) %>%
   mutate(doc_id = paste0(book, "_", paragraph)) %>%
   cast_dfm(document = doc_id, term = feature, value = n)
 ```
 
+Instead of importing individual functions, you can also just grab an entire Python package and use it from R:
+
 ```{r}
 sklearn <- import("sklearn")
-model <- sklearn$decomposition$NMF(
+model <- sklearn$decomposition$NMF( # functions are often elements of objects in Python and can be called like this
   n_components = 6L,  # number of topics
   random_state  =  5L, # equivalent of seed for reproducibility
   max_iter = 400L
-)$fit(austen_dfm)
+)$fit(austen_dfm) # here the $ essentially works like a pipe
 
 beta <- model$components_
 colnames(beta) <- colnames(austen_dfm)
@@ -460,7 +470,7 @@ htmltools::includeHTML("python-in-r_files/figure-html/fig_overtime.html")
 
 # Example 4: Supervised Learning with RoBERTa {#example-4-supervised-learning-with-roberta}
 
-To demonstrate the workflow of supvervised learning, I'm replicating the example from [the naive bayes quanteda tutorial](https://tutorials.quanteda.io/machine-learning/nb/).
+To demonstrate the workflow of supervised learning, I'm replicating the example from [the naive bayes quanteda tutorial](https://tutorials.quanteda.io/machine-learning/nb/).
 
 ```{python}
 #| message: false
@@ -495,6 +505,8 @@ roberta_model = ClassificationModel(model_type="roberta",
                                     args=model_args)
 ```
 
+We construct a training and test set from the movie review corpus in R:
+
 ```{r}
 corp_movies <- quanteda.textmodels::data_corpus_moviereviews %>%
   tibble(quanteda::docvars(x = .), text = .)
@@ -509,6 +521,8 @@ corp_movies_train <- corp_movies %>%
 corp_movies_test <- corp_movies %>%
   filter(!id2 %in% corp_movies_train$id2)
 ```
+
+Now we can train the model on the coded training set and predict the classes for the test set (if you do not have a GPU, this will take a long time, so maybe do it after the course:
 
 ```{python}
 #| output: false
@@ -527,7 +541,7 @@ predictions, raw_outputs = roberta_model.predict(test_l)
 ```{r}
 results <- tibble(
   truth = corp_movies_test$sentiment,
-  estimate = factor(c("neg", "pos")[py$predictions + 1])
+  estimate = factor(c("neg", "pos"))[py$predictions + 1]
 )
 conf_mat <- yardstick::conf_mat(results, truth, estimate)
 summary(conf_mat)
