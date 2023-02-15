@@ -19,7 +19,7 @@ In the next window, select "Git":
 
 ![](media/wizard-2.png)
 
-Then copy the URL "https://github.com/JBGruber/python_for_r_users" into the URL field and select where to download the project to.
+Then copy the URL `https://github.com/JBGruber/python_for_r_users` into the URL field and select where to download the project to.
 
 ![](media/wizard-3.png)
 
